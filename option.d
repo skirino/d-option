@@ -38,12 +38,12 @@ struct Option(T)
   // constructor
   static if(isNullableType!T) {
   public:
-    this(T t) { _Option_value = t; }
+    this(U: T)(inout(U) u) inout { _Option_value = u; }
   } else {
   private:
-    this(T t, bool b) { _Option_value = t; _isDefined = b; }
+    this(U: T)(inout(U) u, bool b) inout { _Option_value = u; _isDefined = b; }
   public:
-    this(T t) { _Option_value = t; _isDefined = true; }
+    this(U: T)(inout(U) u) inout { _Option_value = u; _isDefined = true; }
   }
 
   // isDefined
@@ -61,23 +61,23 @@ private:
   T _Option_value;// Avoid name conflict
 
 public:
-  @property pure T get() {
+  @property pure ref inout(T) get() inout {
     enforce(isDefined, "No such element: None!(" ~ T.stringof ~ ").get");
     return _Option_value;
   }
 
-  pure nothrow T getOrElse(T other) {
+  pure nothrow T getOrElse(U: T)(U other) {
     return isDefined ? _Option_value : other;
   }
   pure nothrow Option!T orElse(Option!T other) {
     return isDefined ? this : other;
   }
 
-  pure nothrow T[] array() {
+  pure nothrow inout(T)[] array() inout {
     return isDefined ? [_Option_value] : [];
   }
-  static pure Option!T fromArray(T[] array) {
-    return array.empty ? None!T() : Some(array[0]);
+  static pure Option!T fromArray(U: T)(U[] array) {
+    return array.empty ? None!T() : Some!T(array[0]);
   }
 
   string toString() {
@@ -104,6 +104,12 @@ public:
     } else {
       return isDefined ? Some!R(mixin(MethodCall)) : None!R();
     }
+  }
+
+  bool opEquals(U: T)(const(Option!U) rhs) const {
+    if( isDefined &&  rhs.isDefined) return _Option_value == rhs._Option_value;
+    if(!isDefined && !rhs.isDefined) return true;
+    return false;
   }
 }
 
@@ -144,6 +150,8 @@ unittest {
     int  method2(int x, int y) { return _i + x + y; }
     override string toString() { return "C's toString"; }
   }
+  class D1: C {}
+  class D2: C {}
 
   // construction helpers
   auto s0 = Some(3);
@@ -165,26 +173,26 @@ unittest {
     int integer = 0;
     int[string] aaEmpty, aaNonEmpty;
     aaNonEmpty["abc"] = 10;
-    assert( Option!int(19)                  .isDefined);
-    assert(!Option!(int*)(null)             .isDefined);
-    assert( Option!(int*)(&integer)         .isDefined);
-    assert( Option!string(null  )           .isDefined);
-    assert( Option!string(""    )           .isDefined);
-    assert( Option!string("hoge")           .isDefined);
-    assert( Option!(int[string])(null      ).isDefined);
-    assert( Option!(int[string])(aaEmpty   ).isDefined);
-    assert( Option!(int[string])(aaNonEmpty).isDefined);
-    assert( Option!C(s2.get)                .isDefined);
-    assert(!Option!C(null  )                .isDefined);
-    assert(Option!string(null)        == Some(""));
-    assert(Option!(int[string])(null) == Some(aaEmpty));
+    assert( Option!(int        )(19                    ).isDefined);
+    assert(!Option!(int*       )(null                  ).isDefined);
+    assert( Option!(int*       )(&integer              ).isDefined);
+    assert( Option!(string     )(null                  ).isDefined);
+    assert( Option!(string     )(""                    ).isDefined);
+    assert( Option!(string     )("hoge"                ).isDefined);
+    assert( Option!(int[string])(cast(int[string]) null).isDefined);
+    assert( Option!(int[string])(aaEmpty               ).isDefined);
+    assert( Option!(int[string])(aaNonEmpty            ).isDefined);
+    assert( Option!(C          )(s2.get                ).isDefined);
+    assert(!Option!(C          )(null                  ).isDefined);
+    assert(Option!(string     )(                  null) == Some(""));
+    assert(Option!(int[string])(cast(int[string]) null) == Some(aaEmpty));
   }
 
   {// construction with type qualifier should be able to compile
     assert(Option!(const     int)(0).isDefined);
     assert(Option!(immutable int)(0).isDefined);
-    assert(Option!(const     C)(                  new C).isDefined);
-    assert(Option!(immutable C)(cast(immutable C) new C).isDefined);
+    assert(Option!(const C)(              new C).isDefined);
+    assert(Option!(const C)(cast(const C) new C).isDefined);
   }
 
   {// get, getOrElse, orElse
@@ -195,12 +203,13 @@ unittest {
     assertThrown!Exception(n1.get);
     assertThrown!Exception(n2.get);
 
-    assert(s0.getOrElse(7)        == s0.get);
-    assert(s1.getOrElse("fuga")   == s1.get);
-    assert(s2.getOrElse(new C)    is s2.get);
-    assert(n0.getOrElse(7)        == 7);
-    assert(n1.getOrElse("fuga")   == "fuga");
-    assert(n2.getOrElse(new C)._i == 5);
+    assert(s0.getOrElse(7)         == s0.get);
+    assert(s0.getOrElse!bool(true) == s0.get);
+    assert(s1.getOrElse("fuga")    == s1.get);
+    assert(s2.getOrElse(new C)     is s2.get);
+    assert(n0.getOrElse(7)         == 7);
+    assert(n1.getOrElse("fuga")    == "fuga");
+    assert(n2.getOrElse(new C)._i  == 5);
 
     assert(s0.orElse(None!int)      == s0);
     assert(s1.orElse(Some("fuga"))  == s1);
@@ -267,5 +276,33 @@ unittest {
     assert(i == 1);
     assert(s2.method2(i, i++) == Some!(int)(s2.get._i + 2));
     assert(i == 2);
+  }
+
+  {// type conversion from derived class
+    auto d1 = new D1;
+    auto optD1    = Option!D1(new D1);
+    auto optD2    = Option!D2(new D2);
+    auto optD1AsC = Option!C (new D1);
+    auto optD2AsC = Option!C .fromArray([new D2]);
+  }
+
+  {// equality
+    assert(None!(int )()  == None!(int )());
+    assert(None!(int )()  == None!(long)());
+    assert(None!(long)()  == None!(int )());
+    assert(Some!(int )(1) != None!(int )());
+    assert(None!(long)()  != Some!(int )(1));
+    assert(Some(1) == Some(1));
+    assert(Some(1) == Some(1L));
+    assert(Some(1) != Some(2));
+    assert(Some(1) != Some(2L));
+
+    auto d1 = new D1;
+    auto d2 = new D2;
+    assert(Some!C (d1) == Some!C (d1));
+    assert(Some!C (d1) == Some!D1(d1));
+    assert(Some!D1(d1) == Some!C (d1));
+    assert(Some!D1(d1) == Some!D1(d1));
+    assert(Some!C (d1) != Some!C (d2));
   }
 }
