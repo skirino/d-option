@@ -24,6 +24,7 @@
 
 module skirino.option;
 
+import std.array : empty;
 import std.conv;
 import std.traits;
 import std.exception;
@@ -71,8 +72,12 @@ public:
   pure nothrow Option!T orElse(Option!T other) {
     return isDefined ? this : other;
   }
+
   pure nothrow T[] array() {
     return isDefined ? [_Option_value] : [];
+  }
+  static pure Option!T fromArray(T[] array) {
+    return array.empty ? None!T() : Some(array[0]);
   }
 
   string toString() {
@@ -84,8 +89,8 @@ public:
 
   auto opDispatch(string fn, Args...)(lazy Args args) {
     static if(args.length == 0) {
-      alias T2 = typeof(mixin("_Option_value." ~ fn));
-      static if(isCallable!T2) {
+      alias F = typeof(mixin("_Option_value." ~ fn));
+      static if(isCallable!F) {
         enum MethodCall = "_Option_value." ~ fn ~ "()";
       } else {// property access
         enum MethodCall = "_Option_value." ~ fn;
@@ -182,7 +187,7 @@ unittest {
     assert(Option!(immutable C)(cast(immutable C) new C).isDefined);
   }
 
-  {// get, getOrElse, orElse, array and toString
+  {// get, getOrElse, orElse
     assert(s0.get    == 3);
     assert(s1.get    == "hoge");
     assert(s2.get._i == 5);
@@ -203,14 +208,24 @@ unittest {
     assert(n0.orElse(Some(10))      == Some(10));
     assert(n1.orElse(None!string()) == None!string());
     assert(n2.orElse(s2)            == s2);
+  }
 
+  {// array conversion
     assert(s0.array == [s0.get]);
     assert(s1.array == [s1.get]);
     assert(s2.array == [s2.get]);
     assert(n0.array == []);
     assert(n1.array == []);
     assert(n2.array == []);
+    assert(s0 == Option!(int   ).fromArray(s0.array));
+    assert(s1 == Option!(string).fromArray(s1.array));
+    assert(s2 == Option!(C     ).fromArray(s2.array));
+    assert(n0 == Option!(int   ).fromArray(n0.array));
+    assert(n1 == Option!(string).fromArray(n1.array));
+    assert(n2 == Option!(C     ).fromArray(n2.array));
+  }
 
+  {// toString
     assert(s0.toString == "Some!(int)(3)");
     assert(s1.toString == "Some!(string)(hoge)");
     assert(s2.toString == "Some!(C)(C's toString)");
