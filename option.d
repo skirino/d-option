@@ -30,7 +30,7 @@ import std.traits;
 import std.exception;
 
 private template isNullableType(T) {
-  enum bool isNullableType = is(T == class) || is(T == interface) || isPointer!T;
+  enum isNullableType = is(T == class) || is(T == interface) || isPointer!T;
 }
 
 struct Option(T)
