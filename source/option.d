@@ -22,12 +22,20 @@
  * THE SOFTWARE.
  */
 
-module skirino.option;
+module option;
 
-import std.array : empty;
+import std.algorithm;
 import std.conv;
 import std.traits;
+import std.range;
 import std.exception;
+
+template isOptionType(T) {
+  static if(is(T U == Option!U))
+    enum bool isOptionType = true;
+  else
+    enum bool isOptionType = false;
+}
 
 private template isNullableType(T) {
   enum isNullableType = is(T == class) || is(T == interface) || isPointer!T;
@@ -35,6 +43,12 @@ private template isNullableType(T) {
 
 struct Option(T)
 {
+private:
+  T _Option_value;// Avoid name conflict by prefixing
+
+public:
+  alias T OptionValueType;
+
   // constructor
   static if(isNullableType!T) {
   public:
@@ -56,33 +70,29 @@ struct Option(T)
   public:
     @property pure nothrow bool isDefined() const { return _isDefined; }
   }
+  @property pure nothrow bool isEmpty() const { return !isDefined(); }
 
-private:
-  T _Option_value;// Avoid name conflict
-
-public:
   @property pure ref inout(T) get() inout {
     enforce(isDefined, "No such element: None!(" ~ T.stringof ~ ").get");
     return _Option_value;
   }
-
-  pure nothrow T getOrElse(U: T)(U other) {
+  pure nothrow inout(T) getOrElse(U: T)(inout(U) other) inout {
     return isDefined ? _Option_value : other;
   }
-  pure nothrow Option!T orElse(Option!T other) {
+  pure nothrow inout(Option!T) orElse(inout(Option!T) other) inout {
     return isDefined ? this : other;
   }
 
   pure nothrow inout(T)[] array() inout {
     return isDefined ? [_Option_value] : [];
   }
-  static pure Option!T fromArray(U: T)(U[] array) {
-    return array.empty ? None!T() : Some!T(array[0]);
+  static pure Option!T fromRange(R)(R r) if(isInputRange!R && is(ElementType!(R): T)) {
+    return r.empty ? None!T() : Some!T(r.front);
   }
 
-  string toString() {
+  string toString() const {
     if(isDefined)
-      return "Some!(" ~ T.stringof ~ ")(" ~ to!string(cast(Unqual!T) _Option_value) ~ ')';
+      return "Some!(" ~ T.stringof ~ ")(" ~ to!string(_Option_value) ~ ')';
     else
       return "None!(" ~ T.stringof ~ ")()";
   }
@@ -90,11 +100,10 @@ public:
   auto opDispatch(string fn, Args...)(lazy Args args) {
     static if(args.length == 0) {
       alias F = typeof(mixin("_Option_value." ~ fn));
-      static if(isCallable!F) {
+      static if(isCallable!F)
         enum MethodCall = "_Option_value." ~ fn ~ "()";
-      } else {// property access
+      else // property access
         enum MethodCall = "_Option_value." ~ fn;
-      }
     } else {
       enum MethodCall = "_Option_value." ~ fn ~ "(args)";
     }
@@ -114,6 +123,9 @@ public:
 }
 
 pure Option!T Some(T)(T t) {
+  return Some!(T, T)(t);
+}
+pure Option!T Some(T, U = T)(U t) if(is(T: U)) {
   static if(isNullableType!T) {
     enforce(t, "Value must not be null!");
     return Option!T(t);
@@ -121,34 +133,53 @@ pure Option!T Some(T)(T t) {
     return Option!T(t, true);
   }
 }
-
 pure nothrow Option!T None(T)() {
-  static if(isNullableType!T) {
+  static if(isNullableType!T)
     return Option!T(null);
-  } else {
+  else
     return Option!T(T.init, false);
-  }
 }
 
-auto map(alias fun, T)(Option!T o) if(isCallable!fun) {
+// `flatten` is defined as a top-level function in order to provide bettern type inference (to my best knowledge).
+pure nothrow Option!T flatten(T)(Option!(Option!T) o)
+{
+  return o.isDefined ? o._Option_value : None!T();
+}
+
+// `map` and `flatMap` is defined as a top-level function to avoid error:
+// "cannot use local 'fun' as parameter to non-global template"
+auto map(alias fun, T)(Option!T o) if(isCallable!fun)
+{
   alias R = ReturnType!(fun);
   static if(is(R == void)) {
-    if(o.isDefined)
-      fun(o._Option_value);
+    if(o.isDefined) fun(o._Option_value);
   } else {
-    if(o.isDefined)
-      return Some!R(fun(o._Option_value));
-    else
-      return None!R();
+    return o.isDefined ? Some!R(fun(o._Option_value)) : None!R();
   }
 }
+auto flatMap(alias fun)(Option!(ParameterTypeTuple!(fun)[0]) o) if(arity!fun == 1 && isOptionType!(ReturnType!fun))
+{
+  return map!fun(o).flatten;
+}
+
+// helpers for arrays and AAs
+Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRange!R)
+{
+  return Option!(ElementEncodingType!R).fromRange(find!(pred, R)(range));
+}
+Option!V fetch(K, V)(V[K] aa, const K key)
+{
+  auto ptr = key in aa;
+  return (ptr == null) ? None!V() : Some(*ptr);
+}
+
 
 unittest {
   class C {
     int _i = 5;
     void method1()             { _i = 10; }
     int  method2(int x, int y) { return _i + x + y; }
-    override string toString() { return "C's toString"; }
+    override string toString() const { return "C's toString"; }
   }
   class D1: C {}
   class D2: C {}
@@ -188,11 +219,20 @@ unittest {
     assert(Option!(int[string])(cast(int[string]) null) == Some(aaEmpty));
   }
 
-  {// construction with type qualifier should be able to compile
+  {// construction with type qualifier should be compiled
     assert(Option!(const     int)(0).isDefined);
     assert(Option!(immutable int)(0).isDefined);
     assert(Option!(const C)(              new C).isDefined);
     assert(Option!(const C)(cast(const C) new C).isDefined);
+
+    assert(Some!(const     int)(0).isDefined);
+    assert(Some!(immutable int)(0).isDefined);
+    assert(Some!(const C)(              new C).isDefined);
+    assert(Some!(const C)(cast(const C) new C).isDefined);
+
+    assert(!None!(const     int)().isDefined);
+    assert(!None!(immutable int)().isDefined);
+    assert(!None!(const C)().isDefined);
   }
 
   {// get, getOrElse, orElse
@@ -226,12 +266,12 @@ unittest {
     assert(n0.array == []);
     assert(n1.array == []);
     assert(n2.array == []);
-    assert(s0 == Option!(int   ).fromArray(s0.array));
-    assert(s1 == Option!(string).fromArray(s1.array));
-    assert(s2 == Option!(C     ).fromArray(s2.array));
-    assert(n0 == Option!(int   ).fromArray(n0.array));
-    assert(n1 == Option!(string).fromArray(n1.array));
-    assert(n2 == Option!(C     ).fromArray(n2.array));
+    assert(s0 == Option!(int   ).fromRange(s0.array));
+    assert(s1 == Option!(string).fromRange(s1.array));
+    assert(s2 == Option!(C     ).fromRange(s2.array));
+    assert(n0 == Option!(int   ).fromRange(n0.array));
+    assert(n1 == Option!(string).fromRange(n1.array));
+    assert(n2 == Option!(C     ).fromRange(n2.array));
   }
 
   {// toString
@@ -243,15 +283,21 @@ unittest {
     assert(n2.toString == "None!(C)()");
   }
 
-  {// call method
-    assert(s1.length == Some!ulong(4));
+  {// access T's members
+    assert(s1.length == Some!size_t(4));
     s2.method1();
     assert(s2.get._i        == 10);
     assert(s2._i            == Some(10));
     assert(s2.method2(1, 2) == Some(13));
-    assert(n1.length        == None!ulong());
+    assert(n1.length        == None!size_t());
     assertNotThrown(n2.method1());
     assert(n2.method2(1, 2) == None!int());
+  }
+
+  {// flatten
+    assert(Some(Some(1))      .flatten == Some(1));
+    assert(Some(None!int())   .flatten == None!int());
+    assert(None!(Option!int)().flatten == None!int());
   }
 
   {// map
@@ -266,15 +312,40 @@ unittest {
     assert(Some(1).map!intFun()    == Some(2));
     assert(None!int().map!intFun() == None!int());
 
-    assert(Some(1)   .map!((int x) => x+1)() == Some(2));
-    assert(None!int().map!((int x) => x+1)() == None!int());
+    assert(Some(1)   .map!((int x) => x + 1) == Some(2));
+    assert(None!int().map!((int x) => x + 1) == None!int());
+
+    // function passed to `map` should not return null
+    C nullFun(int i) { return null; }
+    assertThrown(Some(1).map!(nullFun));
+  }
+
+  {// flatMap
+    Option!int fun(int i) { return Some(i+1); }
+    Option!int s = Some(1);
+    assert(s.flatMap!(fun)() == Some(2));
+  }
+
+  {// detect element from array
+    auto array = [1, 2, 3, 4, 5];
+    bool pred1(int i) { return i == 1; }
+    assert(array.detect!pred1    == Some(1));
+    assert(array.detect!"a > 3" == Some(4));
+    assert(array.detect!"a > 8" == None!int());
+  }
+
+  {// fetch value from AA
+    int[string] aa;
+    aa["abc"] = 0;
+    assert(aa.fetch("abc") == Some(0));
+    assert(aa.fetch("xyz") == None!int());
   }
 
   {// arguments should be lazily evaluated
     int i = 1;
-    assert(n2.method2(i, i++) == None!(int)());
-    assert(i == 1);
     assert(s2.method2(i, i++) == Some!(int)(s2.get._i + 2));
+    assert(i == 2);
+    assert(n2.method2(i, i++) == None!(int)());
     assert(i == 2);
   }
 
@@ -283,7 +354,7 @@ unittest {
     auto optD1    = Option!D1(new D1);
     auto optD2    = Option!D2(new D2);
     auto optD1AsC = Option!C (new D1);
-    auto optD2AsC = Option!C .fromArray([new D2]);
+    auto optD2AsC = Option!C.fromRange([new D2]);
   }
 
   {// equality

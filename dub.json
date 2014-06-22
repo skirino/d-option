@@ -1,0 +1,8 @@
+{
+  "name": "d-option",
+  "description": "Yet another Option/Maybe implementation in D",
+  "homepage": "https://github.com/skirino/d-option",
+  "license": "MIT",
+  "authors": ["Shunsuke Kirino"],
+  "dependencies": {}
+}
