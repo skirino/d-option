@@ -90,11 +90,15 @@ public:
     return r.empty ? None!T() : Some!T(r.front);
   }
 
-  string toString() const {
-    if(isDefined)
-      return "Some!(" ~ T.stringof ~ ")(" ~ to!string(_Option_value) ~ ')';
-    else
+  string toString() const { // toString must be "const" in order to avoid strange linker error
+    if(isDefined) {
+      static if(__traits(compiles, to!string(_Option_value)))
+        return "Some!(" ~ T.stringof ~ ")(" ~ to!string(_Option_value) ~ ')';
+      else
+        return "Some!(" ~ T.stringof ~ ")(" ~ (cast(Unqual!T)_Option_value).toString ~ ')'; // Avoid error due to non-const toString()
+    } else {
       return "None!(" ~ T.stringof ~ ")()";
+    }
   }
 
   auto opDispatch(string fn, Args...)(lazy Args args) {
@@ -288,6 +292,11 @@ unittest {
     assert(n0.toString == "None!(int)()");
     assert(n1.toString == "None!(string)()");
     assert(n2.toString == "None!(C)()");
+
+    class X {}
+    static assert(__traits(compiles, Some(new X).toString));
+    struct Y {}
+    static assert(__traits(compiles, Some(Y()).toString));
   }
 
   {// access T's members
@@ -342,12 +351,19 @@ unittest {
     assert(None!int().flatMap!fun() == None!int());
   }
 
+  {// method chaining
+    Option!int f1(int i) { return i % 2 == 0 ? Some(i / 2) : None!int(); }
+    Option!int f2(int i) { return i % 3 == 0 ? Some(i / 3) : None!int(); }
+    auto x = 10;
+    assert(Some(12).flatMap!f1.flatMap!f2.map!(i => to!string(i * x)).getOrElse("None") == "20"); // => "20"
+  }
+
   {// detect element from array
     auto array = [1, 2, 3, 4, 5];
     bool pred1(int i) { return i == 1; }
-    assert(array.detect!pred1    == Some(1));
-    assert(array.detect!"a > 3" == Some(4));
-    assert(array.detect!"a > 8" == None!int());
+    assert(array.detect!pred1        == Some(1));
+    assert(array.detect!"a % 2 == 0" == Some(2));
+    assert(array.detect!(i => i > 7) == None!int());
   }
 
   {// fetch value from AA
