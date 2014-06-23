@@ -146,18 +146,25 @@ pure nothrow Option!T flatten(T)(Option!(Option!T) o)
   return o.isDefined ? o._Option_value : None!T();
 }
 
-// `map` and `flatMap` is defined as a top-level function to avoid error:
+// `filter`, `map` and `flatMap` is defined as a top-level function to avoid error:
 // "cannot use local 'fun' as parameter to non-global template"
-auto map(alias fun, T)(Option!T o) if(isCallable!fun)
+Option!T filter(alias pred, T)(Option!T o) if(is(typeof(unaryFun!pred(o.get)) : bool))
 {
-  alias R = ReturnType!(fun);
+  if(o.isDefined && unaryFun!pred(o.get))
+    return o;
+  else
+    return None!T();
+}
+auto map(alias fun, T)(Option!T o) if(is(typeof(unaryFun!fun(o.get))))
+{
+  alias R = typeof(unaryFun!fun(o.get));
   static if(is(R == void)) {
-    if(o.isDefined) fun(o._Option_value);
+    if(o.isDefined) unaryFun!fun(o._Option_value);
   } else {
-    return o.isDefined ? Some!R(fun(o._Option_value)) : None!R();
+    return o.isDefined ? Some!R(unaryFun!fun(o._Option_value)) : None!R();
   }
 }
-auto flatMap(alias fun)(Option!(ParameterTypeTuple!(fun)[0]) o) if(arity!fun == 1 && isOptionType!(ReturnType!fun))
+auto flatMap(alias fun)(Option!(ParameterTypeTuple!(unaryFun!fun)[0]) o) if(isOptionType!(typeof(unaryFun!fun(o.get))))
 {
   return map!fun(o).flatten;
 }
@@ -300,6 +307,13 @@ unittest {
     assert(None!(Option!int)().flatten == None!int());
   }
 
+  {// filter
+    assert(Some(3)   .filter!(x => x % 2 == 1) == Some(3));
+    assert(Some(3)   .filter!("a % 2 == 0")    == None!int());
+    assert(None!int().filter!(x => x % 2 == 1) == None!int());
+    assert(None!int().filter!("a % 2 == 0")    == None!int());
+  }
+
   {// map
     int sum = 0;
     void voidFun(int i) { sum += 1; }
@@ -314,6 +328,8 @@ unittest {
 
     assert(Some(1)   .map!((int x) => x + 1) == Some(2));
     assert(None!int().map!((int x) => x + 1) == None!int());
+    assert(Some(1)   .map!"a + 1"() == Some(2));
+    assert(None!int().map!"a + 1"() == None!int());
 
     // function passed to `map` should not return null
     C nullFun(int i) { return null; }
@@ -322,8 +338,8 @@ unittest {
 
   {// flatMap
     Option!int fun(int i) { return Some(i+1); }
-    Option!int s = Some(1);
-    assert(s.flatMap!(fun)() == Some(2));
+    assert(Some(1)   .flatMap!fun() == Some(2));
+    assert(None!int().flatMap!fun() == None!int());
   }
 
   {// detect element from array
