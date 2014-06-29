@@ -126,10 +126,12 @@ public:
   }
 }
 
-pure Option!T Some(T)(T t) {
+pure Option!T Some(T)(T t)
+{
   return Some!(T, T)(t);
 }
-pure Option!T Some(T, U = T)(U t) if(is(T: U)) {
+pure Option!T Some(T, U = T)(U t) if(is(T: U))
+{
   static if(isNullableType!T) {
     enforce(t, "Value must not be null!");
     return Option!T(t);
@@ -137,7 +139,8 @@ pure Option!T Some(T, U = T)(U t) if(is(T: U)) {
     return Option!T(t, true);
   }
 }
-pure nothrow Option!T None(T)() {
+pure nothrow Option!T None(T)()
+{
   static if(isNullableType!T)
     return Option!T(null);
   else
@@ -152,7 +155,7 @@ pure nothrow Option!T flatten(T)(Option!(Option!T) o)
 
 // `filter`, `map` and `flatMap` is defined as a top-level function to avoid error:
 // "cannot use local 'fun' as parameter to non-global template"
-Option!T filter(alias pred, T)(Option!T o) if(is(typeof(unaryFun!pred(o.get)) : bool))
+pure Option!T filter(alias pred, T)(Option!T o) if(is(typeof(unaryFun!pred(o.get)) : bool))
 {
   if(o.isDefined && unaryFun!pred(o.get))
     return o;
@@ -168,25 +171,39 @@ auto map(alias fun, T)(Option!T o) if(is(typeof(unaryFun!fun(o.get))))
     return o.isDefined ? Some!R(unaryFun!fun(o._Option_value)) : None!R();
   }
 }
-auto flatMap(alias fun)(Option!(ParameterTypeTuple!(unaryFun!fun)[0]) o) if(isOptionType!(typeof(unaryFun!fun(o.get))))
+auto flatMap(alias fun, T)(Option!T o) if(isOptionType!(typeof(unaryFun!fun(o.get))))
 {
   return map!fun(o).flatten;
 }
 
-// helpers for arrays and AAs
-Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRange!R)
+// array helper
+pure Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRange!R)
 {
   return Option!(ElementEncodingType!R).fromRange(find!(pred, R)(range));
 }
-Option!V fetch(K, V)(V[K] aa, const K key)
+// associative array helper
+//   Define each function overloads for mutable/const/immutable to workaround
+//   an issue about inout (https://issues.dlang.org/show_bug.cgi?id=9983).
+pure nothrow Option!V fetch(K, V)(V[K] aa, const K key)
 {
   auto ptr = key in aa;
   return (ptr == null) ? None!V() : Some(*ptr);
 }
+pure nothrow Option!(const V) fetch(K, V)(const V[K] aa, const K key)
+{
+  auto ptr = key in aa;
+  return (ptr == null) ? None!(const V)() : Some(*ptr);
+}
+pure nothrow Option!(immutable V) fetch(K, V)(immutable V[K] aa, const K key)
+{
+  auto ptr = key in aa;
+  return (ptr == null) ? None!(immutable V)() : Some(*ptr);
+}
 
 
 unittest {
-  class C {
+  class C
+  {
     int _i = 5;
     void method1()             { _i = 10; }
     int  method2(int x, int y) { return _i + x + y; }
@@ -228,9 +245,7 @@ unittest {
     assert(!Option!(C          )(null                  ).isDefined);
     assert(Option!(string     )(                  null) == Some(""));
     assert(Option!(int[string])(cast(int[string]) null) == Some(aaEmpty));
-  }
 
-  {// construction with type qualifier should be compiled
     assert(Option!(const     int)(0).isDefined);
     assert(Option!(immutable int)(0).isDefined);
     assert(Option!(const C)(              new C).isDefined);
@@ -268,6 +283,13 @@ unittest {
     assert(n0.orElse(Some(10))      == Some(10));
     assert(n1.orElse(None!string()) == None!string());
     assert(n2.orElse(s2)            == s2);
+
+    assert(Some!(const     int)(1).get == 1);
+    assert(Some!(immutable int)(1).get == 1);
+    assert(Some!(const     int)(1).getOrElse(0) == 1);
+    assert(Some!(immutable int)(1).getOrElse(0) == 1);
+    assert(Some!(const     int)(1).orElse(Some!(const     int)(0)) == Some(1));
+    assert(Some!(immutable int)(1).orElse(Some!(immutable int)(0)) == Some(1));
   }
 
   {// array conversion
@@ -283,6 +305,9 @@ unittest {
     assert(n0 == Option!(int   ).fromRange(n0.array));
     assert(n1 == Option!(string).fromRange(n1.array));
     assert(n2 == Option!(C     ).fromRange(n2.array));
+
+    assert(Option!(const     int).fromRange(Some!(const     int)(1).array) == Some(1));
+    assert(Option!(immutable int).fromRange(Some!(immutable int)(1).array) == Some(1));
   }
 
   {// toString
@@ -297,6 +322,9 @@ unittest {
     static assert(__traits(compiles, Some(new X).toString));
     struct Y {}
     static assert(__traits(compiles, Some(Y()).toString));
+
+    assert(Some!(const     int)(1).toString == "Some!(const(int))(1)");
+    assert(Some!(immutable int)(1).toString == "Some!(immutable(int))(1)");
   }
 
   {// access T's members
@@ -308,12 +336,18 @@ unittest {
     assert(n1.length        == None!size_t());
     assertNotThrown(n2.method1());
     assert(n2.method2(1, 2) == None!int());
+
+    assert(Some!(const     string)("hello").length == Some(5));
+    assert(Some!(immutable string)("hello").length == Some(5));
   }
 
   {// flatten
     assert(Some(Some(1))      .flatten == Some(1));
     assert(Some(None!int())   .flatten == None!int());
     assert(None!(Option!int)().flatten == None!int());
+
+    assert(Some(Some!(const     int)(1)).flatten == Some(1));
+    assert(Some(Some!(immutable int)(1)).flatten == Some(1));
   }
 
   {// filter
@@ -321,6 +355,9 @@ unittest {
     assert(Some(3)   .filter!("a % 2 == 0")    == None!int());
     assert(None!int().filter!(x => x % 2 == 1) == None!int());
     assert(None!int().filter!("a % 2 == 0")    == None!int());
+
+    assert(Some!(const     int)(3).filter!(x => x % 2 == 1) == Some(3));
+    assert(Some!(immutable int)(3).filter!(x => x % 2 == 1) == Some(3));
   }
 
   {// map
@@ -343,12 +380,18 @@ unittest {
     // function passed to `map` should not return null
     C nullFun(int i) { return null; }
     assertThrown(Some(1).map!(nullFun));
+
+    assert(Some!(const     int)(1).map!((int x) => x + 1) == Some(2));
+    assert(Some!(immutable int)(1).map!((int x) => x + 1) == Some(2));
   }
 
   {// flatMap
     Option!int fun(int i) { return Some(i+1); }
     assert(Some(1)   .flatMap!fun() == Some(2));
     assert(None!int().flatMap!fun() == None!int());
+
+    assert(Some!(const     int)(1).flatMap!fun() == Some(2));
+    assert(Some!(immutable int)(1).flatMap!fun() == Some(2));
   }
 
   {// method chaining
@@ -359,18 +402,32 @@ unittest {
   }
 
   {// detect element from array
-    auto array = [1, 2, 3, 4, 5];
+    auto array1 = [1, 2, 3, 4, 5];
     bool pred1(int i) { return i == 1; }
-    assert(array.detect!pred1        == Some(1));
-    assert(array.detect!"a % 2 == 0" == Some(2));
-    assert(array.detect!(i => i > 7) == None!int());
+    assert(array1.detect!pred1        == Some(1));
+    assert(array1.detect!"a % 2 == 0" == Some(2));
+    assert(array1.detect!(i => i > 7) == None!int());
+    const array2 = array1;
+    assert(array2.detect!pred1        == Some(1));
+    assert(array2.detect!"a % 2 == 0" == Some(2));
+    assert(array2.detect!(i => i > 7) == None!int());
+    immutable array3 = array1.idup;
+    assert(array3.detect!pred1        == Some(1));
+    assert(array3.detect!"a % 2 == 0" == Some(2));
+    assert(array3.detect!(i => i > 7) == None!int());
   }
 
   {// fetch value from AA
-    int[string] aa;
-    aa["abc"] = 0;
-    assert(aa.fetch("abc") == Some(0));
-    assert(aa.fetch("xyz") == None!int());
+    int[string] aa1;
+    aa1["abc"] = 0;
+    assert(aa1.fetch("abc") == Some(0));
+    assert(aa1.fetch("xyz") == None!int());
+    const aa2 = aa1;
+    assert(aa2.fetch("abc") == Some(0));
+    assert(aa2.fetch("xyz") == None!int());
+    immutable aa3 = cast(immutable)aa1.dup;
+    assert(aa3.fetch("abc") == Some(0));
+    assert(aa3.fetch("xyz") == None!int());
   }
 
   {// arguments should be lazily evaluated
