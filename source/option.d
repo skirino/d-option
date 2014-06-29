@@ -32,9 +32,9 @@ import std.exception;
 
 template isOptionType(T) {
   static if(is(T U == Option!U))
-    enum bool isOptionType = true;
+    enum isOptionType = true;
   else
-    enum bool isOptionType = false;
+    enum isOptionType = false;
 }
 
 private template isNullableType(T) {
