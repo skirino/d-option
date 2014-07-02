@@ -181,6 +181,12 @@ pure Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRan
 {
   return Option!(ElementEncodingType!R).fromRange(find!(pred, R)(range));
 }
+pure ElementEncodingType!(R).OptionValueType[] flatten(R)(R range) if(isInputRange!R && isOptionType!(ElementEncodingType!R))
+{
+  ElementEncodingType!(R).OptionValueType[] a0 = [];
+  return std.algorithm.reduce!((a, b) => b.isDefined ? a ~ b.get : a)(a0, range);
+}
+
 // associative array helper
 //   Define each function overloads for mutable/const/immutable to workaround
 //   an issue about inout (https://issues.dlang.org/show_bug.cgi?id=9983).
@@ -415,6 +421,16 @@ unittest {
     assert(array3.detect!pred1        == Some(1));
     assert(array3.detect!"a % 2 == 0" == Some(2));
     assert(array3.detect!(i => i > 7) == None!int());
+  }
+
+  {// flatten array of Option's
+    assert([None!int()]                  .flatten == []);
+    assert([Some(1), None!int(), Some(2)].flatten == [1, 2]);
+    assert([Some(1), Some(2), Some(3)]   .flatten == [1, 2, 3]);
+    const array1 = [None!int(), Some(1)];
+    assert(array1.flatten == [1]);
+    immutable array2 = [Some(1), Some(2)];
+    assert(array2.flatten == [1, 2]);
   }
 
   {// fetch value from AA
