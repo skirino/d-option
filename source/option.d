@@ -155,9 +155,9 @@ pure nothrow Option!T flatten(T)(Option!(Option!T) o)
 
 // `filter`, `map` and `flatMap` is defined as a top-level function to avoid error:
 // "cannot use local 'fun' as parameter to non-global template"
-pure Option!T filter(alias pred, T)(Option!T o) if(is(typeof(unaryFun!pred(o.get)) : bool))
+pure nothrow Option!T filter(alias pred, T)(Option!T o) if(is(typeof(unaryFun!pred(o.get)) : bool))
 {
-  if(o.isDefined && unaryFun!pred(o.get))
+  if(o.isDefined && unaryFun!pred(o._Option_value))
     return o;
   else
     return None!T();
@@ -176,7 +176,7 @@ auto flatMap(alias fun, T)(Option!T o) if(isOptionType!(typeof(unaryFun!fun(o.ge
   return map!fun(o).flatten;
 }
 
-// array helper
+// range helper
 pure Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRange!R)
 {
   return Option!(ElementEncodingType!R).fromRange(find!(pred, R)(range));
