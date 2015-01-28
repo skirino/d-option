@@ -52,11 +52,14 @@ public:
   // constructor
   static if(isNullableType!T) {
   public:
+    this      (inout(T) t) inout { _Option_value = t; }
     this(U: T)(inout(U) u) inout { _Option_value = u; }
   } else {
   private:
+    this      (inout(T) t, bool b) inout { _Option_value = t; _isDefined = b; }
     this(U: T)(inout(U) u, bool b) inout { _Option_value = u; _isDefined = b; }
   public:
+    this      (inout(T) u) inout { _Option_value = u; _isDefined = true; }
     this(U: T)(inout(U) u) inout { _Option_value = u; _isDefined = true; }
   }
 
@@ -76,10 +79,17 @@ public:
     enforce(isDefined, "No such element: None!(" ~ T.stringof ~ ").get");
     return _Option_value;
   }
-  pure nothrow inout(T) getOrElse(U: T)(inout(U) other) inout {
+
+  pure nothrow const(T) getOrElse(U: T)(const(U) other) const {
     return isDefined ? _Option_value : other;
   }
-  pure nothrow inout(Option!T) orElse(inout(Option!T) other) inout {
+  pure nothrow T getOrElse(U: T)(U other) {
+    return isDefined ? _Option_value : other;
+  }
+  pure nothrow const(Option!T) orElse(U: T)(const(Option!U) other) const {
+    return isDefined ? this : other;
+  }
+  pure nothrow Option!T orElse(U: T)(Option!U other) {
     return isDefined ? this : other;
   }
 
@@ -177,7 +187,7 @@ auto flatMap(alias fun, T)(Option!T o) if(isOptionType!(typeof(unaryFun!fun(o.ge
 }
 
 // range helper
-pure Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRange!R)
+Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRange!R)
 {
   return Option!(ElementEncodingType!R).fromRange(find!(pred, R)(range));
 }
@@ -213,7 +223,7 @@ unittest {
     int _i = 5;
     void method1()             { _i = 10; }
     int  method2(int x, int y) { return _i + x + y; }
-    override string toString() const { return "C's toString"; }
+    override string toString() const { return "C#toString"; }
   }
   class D1: C {}
   class D2: C {}
@@ -275,13 +285,13 @@ unittest {
     assertThrown!Exception(n1.get);
     assertThrown!Exception(n2.get);
 
-    assert(s0.getOrElse(7)         == s0.get);
-    assert(s0.getOrElse!bool(true) == s0.get);
-    assert(s1.getOrElse("fuga")    == s1.get);
-    assert(s2.getOrElse(new C)     is s2.get);
-    assert(n0.getOrElse(7)         == 7);
-    assert(n1.getOrElse("fuga")    == "fuga");
-    assert(n2.getOrElse(new C)._i  == 5);
+    assert(s0.getOrElse(7)        == s0.get);
+    assert(s0.getOrElse(true)     == s0.get);
+    assert(s1.getOrElse("fuga")   == s1.get);
+    assert(s2.getOrElse(new C)    is s2.get);
+    assert(n0.getOrElse(7)        == 7);
+    assert(n1.getOrElse("fuga")   == "fuga");
+    assert(n2.getOrElse(new C)._i == 5);
 
     assert(s0.orElse(None!int)      == s0);
     assert(s1.orElse(Some("fuga"))  == s1);
@@ -319,7 +329,7 @@ unittest {
   {// toString
     assert(s0.toString == "Some!(int)(3)");
     assert(s1.toString == "Some!(string)(hoge)");
-    assert(s2.toString == "Some!(C)(C's toString)");
+    assert(s2.toString == "Some!(C)(C#toString)");
     assert(n0.toString == "None!(int)()");
     assert(n1.toString == "None!(string)()");
     assert(n2.toString == "None!(C)()");

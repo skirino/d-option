@@ -1,5 +1,5 @@
 *.o
 *.a
-option
+.dub/
 dub.selections.json
 __test__library__
