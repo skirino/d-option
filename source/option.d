@@ -24,11 +24,12 @@
 
 module option;
 
-import std.algorithm;
-import std.conv;
-import std.traits;
-import std.range;
-import std.exception;
+import std.algorithm : find, reduce;
+import std.functional : unaryFun;
+import std.conv : to;
+import std.traits : isCallable, isPointer, Unqual;
+import std.range : isInputRange, ElementType, ElementEncodingType, empty, front;
+import std.exception : enforce, assertThrown, assertNotThrown;
 
 template isOptionType(T) {
   static if(is(T U == Option!U))
@@ -194,7 +195,7 @@ Option!(ElementEncodingType!R) detect(alias pred, R)(R range) if(isInputRange!R)
 pure ElementEncodingType!(R).OptionValueType[] flatten(R)(R range) if(isInputRange!R && isOptionType!(ElementEncodingType!R))
 {
   ElementEncodingType!(R).OptionValueType[] a0 = [];
-  return std.algorithm.reduce!((a, b) => b.isDefined ? a ~ b.get : a)(a0, range);
+  return reduce!((a, b) => b.isDefined ? a ~ b.get : a)(a0, range);
 }
 
 // associative array helper
