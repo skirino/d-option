@@ -135,6 +135,14 @@ public:
     if(!isDefined && !rhs.isDefined) return true;
     return false;
   }
+
+  // foreach support
+  int opApply(int delegate(ref const(T)) operation) const {
+    if(isDefined)
+      return operation(_Option_value);
+    else
+      return 0;
+  }
 }
 
 pure Option!T Some(T)(T t)
@@ -491,5 +499,13 @@ unittest {
     assert(Some!D1(d1) == Some!C (d1));
     assert(Some!D1(d1) == Some!D1(d1));
     assert(Some!C (d1) != Some!C (d2));
+  }
+
+  {// foreach
+    int x = 0;
+    foreach(elem; Some("hello")) { x++; }
+    assert(x == 1);
+    foreach(elem; None!int()) { x++; }
+    assert(x == 1);
   }
 }
